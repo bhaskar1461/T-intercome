@@ -49,6 +49,24 @@ jobs:
           fi
           xcodebuild -version
 
+      # ─── Generate Xcode project ─────────────────────────────
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate --spec project.yml
+
+      # ─── Run Unit & Hardware Logic Tests ────────────────────
+      - name: Run Test Suite
+        run: |
+          SIM_ID=$(xcrun simctl list devices available 'iPhone' | grep -m 1 -E '\([A-F0-9-]+\)' | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+          echo "Selected iOS Simulator ID: $SIM_ID"
+          xcodebuild test \
+            -project SplitBudsPTT.xcodeproj \
+            -scheme SplitBudsPTT \
+            -destination "id=$SIM_ID" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
       # ─── Build unsigned IPA ─────────────────────────────────
       - name: Build unsigned IPA
         run: |

@@ -39,3 +39,31 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
     dependencies: []
+
+  SplitBudsPTTTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: SplitBudsPTT
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bhaskar.splitbudsptt.tests
+        SWIFT_VERSION: "5.10"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  SplitBudsPTT:
+    build:
+      targets:
+        SplitBudsPTT: all
+        SplitBudsPTTTests: [test]
+    test:
+      targets:
+        - SplitBudsPTTTests
