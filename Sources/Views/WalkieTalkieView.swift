@@ -18,7 +18,7 @@ struct WalkieTalkieView: View {
     @State private var showDiagnostics = false
     @State private var isInvertedLayout = false
     @State private var setupError: String?
-    @State private var micPermission: AVAudioApplication.recordPermission = AVAudioApplication.shared.recordPermission
+    @State private var micPermission: AVAudioApplication.recordPermission = .undetermined
 
     // Haptic generators
     private let impactPress = UIImpactFeedbackGenerator(style: .rigid)
@@ -85,8 +85,16 @@ struct WalkieTalkieView: View {
         .task {
             await setupAudio()
         }
-        .onDisappear {
-            teardownAudio()
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task {
+                let currentPermission = AVAudioApplication.shared.recordPermission
+                if currentPermission != micPermission {
+                    micPermission = currentPermission
+                    if currentPermission == .granted && !isSetUp {
+                        await setupAudio()
+                    }
+                }
+            }
         }
     }
 
@@ -117,13 +125,6 @@ struct WalkieTalkieView: View {
         } catch {
             setupError = error.localizedDescription
         }
-    }
-
-    private func teardownAudio() {
-        levelMeter.stopMetering()
-        routeMonitor.stopMonitoring()
-        audioEngine.stopEngine()
-        AudioSessionManager.shared.deactivate()
     }
 
     // MARK: - Permission View

@@ -42,11 +42,16 @@ enum EarbudChannel: String, CaseIterable, Identifiable {
 /// to either the Left (-1.0) or Right (+1.0) earbud with optional
 /// walkie-talkie bandpass EQ filtering.
 ///
+/// Features a continuous background silent carrier stream that keeps the iOS
+/// audio hardware active 24/7 (like Spotify), preventing iOS from suspending or
+/// killing the app when backgrounded or when the screen is locked.
+///
 /// Graph topology:
 /// ```
 /// inputNode -> gainMixerNode -> bandpassEQ -> pttMixer -> mainMixerNode -> outputNode
 ///                                                ^
 ///                                          pan = -1 / +1
+/// silentCarrierNode (0.0f continuous) -------------------> mainMixerNode
 /// ```
 @MainActor
 final class WalkieAudioEngine: ObservableObject {
@@ -73,6 +78,11 @@ final class WalkieAudioEngine: ObservableObject {
     /// Gain node for mic boost.
     private let gainMixerNode = AVAudioMixerNode()
 
+    /// Silent carrier node: continuously feeds 0.0f samples into the main mixer.
+    /// This keeps iOS audio hardware running in the background (like Spotify),
+    /// preventing iOS Jetsam/watchdog from killing the app process.
+    private var silentCarrierNode: AVAudioSourceNode?
+
     private let logger = Logger(subsystem: "com.bhaskar.splitbudsptt", category: "AudioEngine")
 
     // MARK: - Init
@@ -84,7 +94,7 @@ final class WalkieAudioEngine: ObservableObject {
     // MARK: - Engine Setup
 
     /// Builds and prepares the audio graph. Call after `AudioSessionManager.configure()`.
-    /// Attaches auxiliary generators (tones, greeting voices) BEFORE starting the engine
+    /// Attaches auxiliary generators (carrier, tones, greeting voices) BEFORE starting the engine
     /// to avoid CoreAudio graph re-connection crashes while running.
     func buildGraph(toneGenerator: ToneGenerator? = nil, greetingManager: GreetingVoiceManager? = nil) throws {
         // Stop engine cleanly if previously running
@@ -109,15 +119,33 @@ final class WalkieAudioEngine: ObservableObject {
         engine.attach(bandpassEQ)
         engine.attach(pttMixerNode)
 
+        // Attach silent background keep-alive carrier node
+        let carrierFormat = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 1)!
+        let carrier = AVAudioSourceNode(format: carrierFormat) { _, _, frameCount, audioBufferList -> OSStatus in
+            let bufferList = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            for buffer in bufferList {
+                if let ptr = buffer.mData {
+                    memset(ptr, 0, Int(buffer.mDataByteSize))
+                }
+            }
+            return noErr
+        }
+        self.silentCarrierNode = carrier
+        engine.attach(carrier)
+
         // Attach auxiliary subsystems BEFORE preparing engine
         toneGenerator?.attach(to: engine)
         greetingManager?.attach(to: engine)
 
         // Wire core mic path: input -> gain -> bandpass -> pttMixer -> mainMixer
+        let stereoFormat = AVAudioFormat(standardFormatWithSampleRate: inputFormat.sampleRate, channels: 2)
         engine.connect(inputNode,      to: gainMixerNode, format: inputFormat)
         engine.connect(gainMixerNode,  to: bandpassEQ,    format: inputFormat)
         engine.connect(bandpassEQ,     to: pttMixerNode,  format: inputFormat)
-        engine.connect(pttMixerNode,   to: engine.mainMixerNode, format: nil)
+        engine.connect(pttMixerNode,   to: engine.mainMixerNode, format: stereoFormat)
+
+        // Wire silent carrier into mainMixer to guarantee non-stop background I/O
+        engine.connect(carrier, to: engine.mainMixerNode, format: carrierFormat)
 
         // Start silent — gate closed
         pttMixerNode.outputVolume = 0.0
@@ -126,10 +154,14 @@ final class WalkieAudioEngine: ObservableObject {
 
         engine.prepare()
         try engine.start()
-        logger.info("AVAudioEngine successfully started.")
+        logger.info("AVAudioEngine successfully started with 24/7 background audio keep-alive.")
 
-        // Start greeting player node now that engine is running
+        // Start player nodes now that engine is running
+        toneGenerator?.startPlayer()
         greetingManager?.startPlayer()
+
+        // Initialize Lock Screen / Control Center media controls
+        NowPlayingManager.shared.setupRemoteCommands()
     }
 
     /// Tears down the engine cleanly.
@@ -151,6 +183,8 @@ final class WalkieAudioEngine: ObservableObject {
 
         activeChannel = channel
         isTransmitting = true
+
+        NowPlayingManager.shared.updateNowPlaying(isTransmitting: true, channel: channel)
     }
 
     /// Closes the mic gate.
@@ -160,6 +194,8 @@ final class WalkieAudioEngine: ObservableObject {
         pttMixerNode.outputVolume = 0.0
         activeChannel = nil
         isTransmitting = false
+
+        NowPlayingManager.shared.updateNowPlaying(isTransmitting: false, channel: nil)
     }
 
     // MARK: - EQ Configuration

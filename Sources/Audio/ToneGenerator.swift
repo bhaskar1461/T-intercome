@@ -8,7 +8,8 @@ final class ToneRenderState: @unchecked Sendable {
 
 /// Procedural tone synthesizer for walkie-talkie squelch beeps and stereo calibration tones.
 ///
-/// All tones are generated mathematically — no external audio assets required.
+/// Uses an `AVAudioPlayerNode` with pre-rendered PCM buffers to prevent dynamic graph mutations
+/// while the engine is running, eliminating CoreAudio graph crashes.
 /// Each tone is panned hard Left (-1.0) or Right (+1.0) to verify true stereo separation.
 @MainActor
 final class ToneGenerator: ObservableObject {
@@ -19,34 +20,48 @@ final class ToneGenerator: ObservableObject {
     private let logger = Logger(subsystem: "com.bhaskar.splitbudsptt", category: "ToneGenerator")
 
     /// Mixer to pan generated tones to a specific earbud.
-    private let toneMixerNode = AVAudioMixerNode()
+    let toneMixerNode = AVAudioMixerNode()
 
-    /// Currently active source node (if any).
-    private var activeSourceNode: AVAudioSourceNode?
+    /// Player node to schedule pre-rendered tone buffers safely without graph modification.
+    let playerNode = AVAudioPlayerNode()
 
     @Published private(set) var isPlayingTone = false
 
+    private var isAttached = false
+
     // MARK: - Constants
 
-    private let sampleRate: Double = 48_000.0
-    private let rogerBeepFrequency: Float = 1200.0
-    private let rogerBeepDuration: Double = 0.12           // 120ms burst
-    private let leftTestFrequency: Float = 440.0           // A4
-    private let rightTestFrequency: Float = 660.0          // E5
-    private let testToneDuration: Double = 0.6             // 600ms pulse
-
-    private var isAttached = false
+    let sampleRate: Double = 48_000.0
+    let rogerBeepFrequency: Float = 1200.0
+    let rogerBeepDuration: Double = 0.12           // 120ms burst
+    let leftTestFrequency: Float = 440.0           // A4
+    let rightTestFrequency: Float = 660.0          // E5
+    let testToneDuration: Double = 0.6             // 600ms pulse
 
     // MARK: - Setup
 
-    /// Attaches the tone mixer to the given engine. Call once during graph build.
+    /// Attaches the tone mixer and player node to the engine. Call during graph build.
     func attach(to engine: AVAudioEngine) {
         guard !isAttached else { return }
         self.engine = engine
+
         engine.attach(toneMixerNode)
+        engine.attach(playerNode)
+
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        engine.connect(playerNode, to: toneMixerNode, format: format)
         engine.connect(toneMixerNode, to: engine.mainMixerNode, format: nil)
+
         toneMixerNode.outputVolume = 0.8
         isAttached = true
+        logger.info("ToneGenerator attached to AVAudioEngine.")
+    }
+
+    /// Starts the tone player node after engine is running.
+    func startPlayer() {
+        if isAttached && !playerNode.isPlaying {
+            playerNode.play()
+        }
     }
 
     // MARK: - Roger Beep / Squelch
@@ -73,88 +88,75 @@ final class ToneGenerator: ObservableObject {
 
     // MARK: - Core Synthesis
 
-    /// Generates a sine wave (optionally mixed with white noise) and routes it through `toneMixerNode`.
+    /// Synthesizes a PCM buffer and schedules it through `playerNode`.
+    /// Zero dynamic audio graph reconnection — completely crash-proof.
     private func playTone(frequency: Float, duration: Double, pan: Float, mixNoise: Bool) {
         guard let engine = engine, engine.isRunning else {
             logger.warning("Engine not running — cannot play tone.")
             return
         }
 
-        // Remove any prior source node
-        stopCurrentTone()
+        toneMixerNode.pan = pan
+
+        guard let buffer = generatePCMBuffer(frequency: frequency, duration: duration, mixNoise: mixNoise) else {
+            return
+        }
+
+        if !playerNode.isPlaying {
+            playerNode.play()
+        }
+
+        isPlayingTone = true
+        playerNode.scheduleBuffer(buffer, at: nil, options: .interrupts) { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.isPlayingTone = false
+            }
+        }
+    }
+
+    /// Procedurally renders a sine wave buffer with smooth envelope tapering.
+    private func generatePCMBuffer(frequency: Float, duration: Double, mixNoise: Bool) -> AVAudioPCMBuffer? {
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        let frameCount = AVAudioFrameCount(duration * sampleRate)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            return nil
+        }
+        buffer.frameLength = frameCount
+
+        guard let channelData = buffer.floatChannelData?[0] else {
+            return nil
+        }
 
         let sr = Float(sampleRate)
-        let totalSamples = Int(duration * sampleRate)
-        let renderState = ToneRenderState()
+        let totalSamples = Int(frameCount)
         let noiseAmplitude: Float = mixNoise ? 0.15 : 0.0
         let toneAmplitude: Float = 0.7
 
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        for i in 0..<totalSamples {
+            let t = Float(i) / sr
+            let sineVal = sin(2.0 * .pi * frequency * t)
 
-        let sourceNode = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList -> OSStatus in
-            let bufferList = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            let count = Int(frameCount)
-
-            for bufferIndex in 0..<bufferList.count {
-                guard let samples = bufferList[bufferIndex].mData?.assumingMemoryBound(to: Float.self) else {
-                    continue
-                }
-
-                for frame in 0..<count {
-                    let currentSample = renderState.sampleIndex
-                    if currentSample >= totalSamples {
-                        samples[frame] = 0.0
-                    } else {
-                        let phase = 2.0 * Float.pi * frequency * Float(currentSample) / sr
-                        let sine = sinf(phase) * toneAmplitude
-
-                        // White noise: random values in [-1, 1]
-                        let noise = noiseAmplitude * Float.random(in: -1.0...1.0)
-
-                        // Envelope: quick fade-in (2ms) and fade-out (10ms) to avoid clicks
-                        let fadeInSamples = Int(0.002 * Double(sr))
-                        let fadeOutSamples = Int(0.010 * Double(sr))
-                        var envelope: Float = 1.0
-
-                        if currentSample < fadeInSamples {
-                            envelope = Float(currentSample) / Float(fadeInSamples)
-                        } else if currentSample > totalSamples - fadeOutSamples {
-                            let remaining = totalSamples - currentSample
-                            envelope = Float(remaining) / Float(fadeOutSamples)
-                        }
-
-                        samples[frame] = (sine + noise) * envelope
-                    }
-                    renderState.sampleIndex += 1
-                }
+            let noiseVal: Float
+            if mixNoise {
+                noiseVal = (Float.random(in: -1.0...1.0)) * noiseAmplitude
+            } else {
+                noiseVal = 0.0
             }
-            return noErr
+
+            // Apply quick attack and release envelope (first/last 200 samples) to prevent clicks
+            let envelope: Float
+            let rampLength = 200
+            if i < rampLength {
+                envelope = Float(i) / Float(rampLength)
+            } else if i > totalSamples - rampLength {
+                envelope = Float(totalSamples - i) / Float(rampLength)
+            } else {
+                envelope = 1.0
+            }
+
+            channelData[i] = (sineVal * toneAmplitude + noiseVal) * envelope
         }
 
-        engine.attach(sourceNode)
-        engine.connect(sourceNode, to: toneMixerNode, format: format)
-        toneMixerNode.pan = pan
-
-        activeSourceNode = sourceNode
-        isPlayingTone = true
-
-        // Schedule cleanup after the tone duration
-        let cleanupDelay = duration + 0.05
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(cleanupDelay))
-            self?.stopCurrentTone()
-        }
-
-        logger.info("Playing tone: \(frequency)Hz, pan=\(pan), duration=\(duration)s, noise=\(mixNoise)")
-    }
-
-    /// Removes the active source node from the engine.
-    private func stopCurrentTone() {
-        if let node = activeSourceNode {
-            engine?.disconnectNodeOutput(node)
-            engine?.detach(node)
-            activeSourceNode = nil
-        }
-        isPlayingTone = false
+        return buffer
     }
 }
