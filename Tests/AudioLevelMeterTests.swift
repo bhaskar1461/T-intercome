@@ -33,3 +33,4 @@ final class AudioLevelMeterTests: XCTestCase {
         XCTAssertEqual(meter.rawMicLevel, 0.0)
     }
 }
+

@@ -23,6 +23,19 @@ enum EarbudChannel: String, CaseIterable, Identifiable {
         case .right: return "Right Bud"
         }
     }
+
+    /// The user assigned to this earbud channel.
+    var userName: String {
+        switch self {
+        case .left:  return "Bhaskar"
+        case .right: return "Tanmayee"
+        }
+    }
+
+    /// The personalized startup greeting for this user.
+    var greetingText: String {
+        "Hey \(userName)"
+    }
 }
 
 /// Builds the low-latency AVAudioEngine graph that routes the iPhone mic

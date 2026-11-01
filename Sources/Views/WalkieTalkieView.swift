@@ -11,6 +11,7 @@ struct WalkieTalkieView: View {
     @StateObject private var routeMonitor = RouteMonitor()
     @StateObject private var levelMeter = AudioLevelMeter()
     @StateObject private var toneGenerator = ToneGenerator()
+    @StateObject private var greetingManager = GreetingVoiceManager()
 
     @State private var isSetUp = false
     @State private var showDiagnostics = false
@@ -35,6 +36,11 @@ struct WalkieTalkieView: View {
                 // Error banner
                 if let error = setupError {
                     errorBanner(error)
+                }
+
+                // Startup Greeting Banner
+                if greetingManager.isGreetingActive {
+                    startupGreetingBanner
                 }
 
                 // HFP Warning
@@ -65,7 +71,8 @@ struct WalkieTalkieView: View {
             DiagnosticsSheetView(
                 audioEngine: audioEngine,
                 routeMonitor: routeMonitor,
-                toneGenerator: toneGenerator
+                toneGenerator: toneGenerator,
+                greetingManager: greetingManager
             )
         }
         .task {
@@ -84,10 +91,12 @@ struct WalkieTalkieView: View {
             try AudioSessionManager.shared.configure()
             try audioEngine.buildGraph()
             toneGenerator.attach(to: audioEngine.engine)
+            greetingManager.attach(to: audioEngine.engine)
             levelMeter.startMetering(engine: audioEngine.engine, pttMixer: audioEngine.pttMixerNode)
             routeMonitor.startMonitoring()
             isSetUp = true
             setupError = nil
+            greetingManager.playStartupGreetingSequence()
         } catch {
             setupError = error.localizedDescription
         }
@@ -178,15 +187,20 @@ struct WalkieTalkieView: View {
                 VStack(spacing: 12) {
                     Spacer()
 
-                    // Channel label
-                    Text("SEND TO \(channel == .left ? "LEFT" : "RIGHT") BUD")
+                    // Channel & User label
+                    Text("TALK TO \(channel.userName.uppercased())")
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundColor(.white.opacity(0.5))
 
-                    // Channel ID
-                    Text(channel.rawValue)
-                        .font(.system(size: 48, weight: .heavy, design: .monospaced))
-                        .foregroundColor(isActive ? .red : .white)
+                    // User Name & Channel ID
+                    VStack(spacing: 2) {
+                        Text(channel.userName.uppercased())
+                            .font(.system(size: 36, weight: .heavy, design: .monospaced))
+                            .foregroundColor(isActive ? .red : .white)
+                        Text("\(channel.rawValue) · \(channel == .left ? "LEFT BUD" : "RIGHT BUD")")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.35))
+                    }
 
                     // Level meter bar
                     levelBar(
@@ -260,6 +274,37 @@ struct WalkieTalkieView: View {
             .background(Color.yellow)
             .cornerRadius(8)
         }
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+    }
+
+    // MARK: - Startup Greeting Banner
+
+    private var startupGreetingBanner: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .shadow(color: .red, radius: 4)
+
+            Text("GREETING // \(greetingManager.currentGreetingText)")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+
+            Spacer()
+
+            Text("STEREO")
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .foregroundColor(.white.opacity(0.5))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.red.opacity(0.15))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.red.opacity(0.3), lineWidth: 1)
+        )
         .padding(.horizontal, 12)
         .padding(.top, 4)
     }

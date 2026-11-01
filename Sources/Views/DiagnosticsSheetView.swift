@@ -8,6 +8,7 @@ struct DiagnosticsSheetView: View {
     @ObservedObject var audioEngine: WalkieAudioEngine
     @ObservedObject var routeMonitor: RouteMonitor
     @ObservedObject var toneGenerator: ToneGenerator
+    @ObservedObject var greetingManager: GreetingVoiceManager
 
     @State private var availableDataSources: [AVAudioSessionDataSourceDescription] = []
     @State private var selectedDataSourceID: Int = 0
@@ -46,6 +47,36 @@ struct DiagnosticsSheetView: View {
                                         toneGenerator.playTestToneRight()
                                     }
                                 }
+                            }
+                        }
+
+                        // MARK: - Startup Greetings
+                        sectionCard(title: "PARTNER GREETINGS") {
+                            VStack(spacing: 12) {
+                                Text("Independent voice greetings for Bhaskar (Left) & Tanmayee (Right)")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.4))
+
+                                Button {
+                                    greetingManager.playStartupGreetingSequence()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "speaker.wave.2.fill")
+                                        Text("REPLAY GREETINGS (\"HEY BHASKAR\" / \"HEY TANMAYEE\")")
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        Spacer()
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.vertical, 12)
+                                    .padding(.horizontal, 14)
+                                    .background(Color.white.opacity(0.08))
+                                    .cornerRadius(8)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+                                    )
+                                }
+                                .disabled(greetingManager.isGreetingActive)
                             }
                         }
 

@@ -85,3 +85,4 @@ final class AudioEngineTests: XCTestCase {
         XCTAssertTrue(engine.isRadioFilterEnabled, "Radio filter should be re-enabled")
     }
 }
+

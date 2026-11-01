@@ -41,3 +41,4 @@ final class ToneGeneratorTests: XCTestCase {
         XCTAssertEqual(state.sampleIndex, 512)
     }
 }
+

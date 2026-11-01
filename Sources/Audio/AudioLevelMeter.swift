@@ -70,11 +70,12 @@ final class AudioLevelMeter: ObservableObject {
         logger.info("Audio level tap installed (bufferSize=512).")
     }
 
-    /// Removes the tap from the input node.
+    /// Removes the tap from the input node and resets levels to zero.
     func stopMetering() {
-        guard isTapInstalled, let engine = engine else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        isTapInstalled = false
+        if isTapInstalled, let engine = engine {
+            engine.inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
+        }
 
         leftLevel = 0.0
         rightLevel = 0.0

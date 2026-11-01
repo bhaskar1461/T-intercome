@@ -35,3 +35,4 @@ final class AudioSessionLogicTests: XCTestCase {
         XCTAssertTrue(MicrophoneIsolationMode.voiceIsolation.subtitle.contains("Neural Engine"))
     }
 }
+
