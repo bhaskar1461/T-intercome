@@ -1,0 +1,76 @@
+name: iOS Build — SplitBuds PTT
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-unsigned-ipa:
+    name: Build Unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      # ─── Checkout ───────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ─── Environment info ──────────────────────────────────
+      - name: Print build environment
+        run: |
+          echo "macOS: $(sw_vers -productVersion)"
+          echo "Xcode: $(xcodebuild -version | head -1)"
+          echo "Swift: $(swift --version | head -1)"
+          echo "Architecture: $(uname -m)"
+
+      # ─── Install XcodeGen ──────────────────────────────────
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen &>/dev/null; then
+            echo "Installing xcodegen via Homebrew..."
+            brew install xcodegen
+          else
+            echo "xcodegen already available: $(xcodegen --version)"
+          fi
+
+      # ─── Select latest stable Xcode ────────────────────────
+      - name: Select Xcode
+        run: |
+          # Use the latest Xcode available on the runner
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE_PATH" ]; then
+            sudo xcode-select -s "$XCODE_PATH"
+            echo "Selected Xcode: $XCODE_PATH"
+          fi
+          xcodebuild -version
+
+      # ─── Build unsigned IPA ─────────────────────────────────
+      - name: Build unsigned IPA
+        run: |
+          chmod +x scripts/build_unsigned_ipa.sh
+          ./scripts/build_unsigned_ipa.sh
+
+      # ─── Verify artifact ───────────────────────────────────
+      - name: Verify IPA exists
+        run: |
+          if [ ! -f SplitBudsPTT.ipa ]; then
+            echo "ERROR: SplitBudsPTT.ipa not found!"
+            exit 1
+          fi
+          echo "IPA size: $(du -h SplitBudsPTT.ipa | cut -f1)"
+          echo "IPA contents:"
+          unzip -l SplitBudsPTT.ipa | head -20
+
+      # ─── Upload artifact ───────────────────────────────────
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SplitBudsPTT-iOS-IPA
+          path: SplitBudsPTT.ipa
+          retention-days: 90
+          if-no-files-found: error

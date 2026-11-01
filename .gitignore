@@ -1,0 +1,19 @@
+# Xcode
+build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+!default.sublime-project
+*.xcuserstate
+project.xcworkspace/
+xcuserdata/
+
+# Build artifacts
+*.ipa
+Payload/
+*.dSYM.zip
+*.dSYM
+
+# OS files
+.DS_Store
+Thumbs.db
