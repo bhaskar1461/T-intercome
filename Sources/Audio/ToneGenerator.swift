@@ -2,6 +2,10 @@ import AVFoundation
 import Foundation
 import os.log
 
+final class ToneRenderState: @unchecked Sendable {
+    var sampleIndex: Int = 0
+}
+
 /// Procedural tone synthesizer for walkie-talkie squelch beeps and stereo calibration tones.
 ///
 /// All tones are generated mathematically — no external audio assets required.
@@ -12,7 +16,6 @@ final class ToneGenerator: ObservableObject {
     // MARK: - Properties
 
     private weak var engine: AVAudioEngine?
-    private let tonePlayerNode = AVAudioSourceNode? .none  // replaced by per-call source nodes
     private let logger = Logger(subsystem: "com.bhaskar.splitbudsptt", category: "ToneGenerator")
 
     /// Mixer to pan generated tones to a specific earbud.
@@ -78,7 +81,7 @@ final class ToneGenerator: ObservableObject {
 
         let sr = Float(sampleRate)
         let totalSamples = Int(duration * sampleRate)
-        var sampleIndex: Int = 0
+        let renderState = ToneRenderState()
         let noiseAmplitude: Float = mixNoise ? 0.15 : 0.0
         let toneAmplitude: Float = 0.7
 
@@ -94,10 +97,11 @@ final class ToneGenerator: ObservableObject {
                 }
 
                 for frame in 0..<count {
-                    if sampleIndex >= totalSamples {
+                    let currentSample = renderState.sampleIndex
+                    if currentSample >= totalSamples {
                         samples[frame] = 0.0
                     } else {
-                        let phase = 2.0 * Float.pi * frequency * Float(sampleIndex) / sr
+                        let phase = 2.0 * Float.pi * frequency * Float(currentSample) / sr
                         let sine = sinf(phase) * toneAmplitude
 
                         // White noise: random values in [-1, 1]
@@ -108,16 +112,16 @@ final class ToneGenerator: ObservableObject {
                         let fadeOutSamples = Int(0.010 * Double(sr))
                         var envelope: Float = 1.0
 
-                        if sampleIndex < fadeInSamples {
-                            envelope = Float(sampleIndex) / Float(fadeInSamples)
-                        } else if sampleIndex > totalSamples - fadeOutSamples {
-                            let remaining = totalSamples - sampleIndex
+                        if currentSample < fadeInSamples {
+                            envelope = Float(currentSample) / Float(fadeInSamples)
+                        } else if currentSample > totalSamples - fadeOutSamples {
+                            let remaining = totalSamples - currentSample
                             envelope = Float(remaining) / Float(fadeOutSamples)
                         }
 
                         samples[frame] = (sine + noise) * envelope
                     }
-                    sampleIndex += 1
+                    renderState.sampleIndex += 1
                 }
             }
             return noErr

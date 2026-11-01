@@ -35,14 +35,14 @@ xcodebuild \
     -project SplitBudsPTT.xcodeproj \
     -scheme SplitBudsPTT \
     -configuration Release \
+    -destination 'generic/platform=iOS' \
     -sdk iphoneos \
     -derivedDataPath "${DERIVED_DATA_PATH}" \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" \
     DEVELOPMENT_TEAM="" \
-    AD_HOC_CODE_SIGNING_ALLOWED=YES \
-    2>&1 | tail -20
+    AD_HOC_CODE_SIGNING_ALLOWED=YES
 
 APP_PATH="${DERIVED_DATA_PATH}/Build/Products/Release-iphoneos/SplitBudsPTT.app"
 

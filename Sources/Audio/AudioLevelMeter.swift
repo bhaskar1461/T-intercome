@@ -49,8 +49,21 @@ final class AudioLevelMeter: ObservableObject {
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
 
-        inputNode.installTap(onBus: 0, bufferSize: 512, format: format) { [weak self] buffer, _ in
-            self?.processBuffer(buffer)
+        inputNode.installTap(onBus: 0, bufferSize: 512, format: format) { [weak self, weak pttMixer] buffer, _ in
+            guard let channelData = buffer.floatChannelData else { return }
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength > 0 else { return }
+
+            let samples = channelData[0]
+            var rms: Float = 0.0
+            vDSP_rmsqv(samples, 1, &rms, vDSP_Length(frameLength))
+            let normalizedRMS = min(rms * 5.0, 1.0)
+            let pan = pttMixer?.pan ?? 0.0
+            let volume = pttMixer?.outputVolume ?? 0.0
+
+            Task { @MainActor [weak self] in
+                self?.applyLevel(normalizedRMS, pan: pan, volume: volume)
+            }
         }
 
         isTapInstalled = true
@@ -63,61 +76,29 @@ final class AudioLevelMeter: ObservableObject {
         engine.inputNode.removeTap(onBus: 0)
         isTapInstalled = false
 
-        // Reset levels
-        Task { @MainActor in
-            self.leftLevel = 0.0
-            self.rightLevel = 0.0
-            self.rawMicLevel = 0.0
-        }
+        leftLevel = 0.0
+        rightLevel = 0.0
+        rawMicLevel = 0.0
         logger.info("Audio level tap removed.")
     }
 
-    // MARK: - Buffer Processing
+    // MARK: - Level Smoothing
 
-    /// Computes normalized RMS power from the audio buffer using vDSP.
-    private func processBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData else { return }
-        let frameLength = Int(buffer.frameLength)
-        guard frameLength > 0 else { return }
+    /// Updates smoothed levels on the main actor.
+    private func applyLevel(_ normalizedRMS: Float, pan: Float, volume: Float) {
+        rawMicLevel = rawMicLevel * smoothingFactor + normalizedRMS * (1.0 - smoothingFactor)
 
-        // Compute RMS of channel 0 (mono mic input)
-        let samples = channelData[0]
-        var rms: Float = 0.0
-        vDSP_rmsqv(samples, 1, &rms, vDSP_Length(frameLength))
-
-        // Normalize to 0.0–1.0 range (clamp values above 1.0)
-        // Typical voice RMS is 0.01–0.2; scale up for visual responsiveness
-        let normalizedRMS = min(rms * 5.0, 1.0)
-
-        // Determine which channel is active based on PTT mixer pan
-        let currentPan = pttMixer?.pan ?? 0.0
-        let currentVolume = pttMixer?.outputVolume ?? 0.0
-
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-
-            // Smooth the raw mic level
-            self.rawMicLevel = self.rawMicLevel * self.smoothingFactor +
-                               normalizedRMS * (1.0 - self.smoothingFactor)
-
-            if currentVolume > 0.01 {
-                // PTT is active — route level to the active channel
-                if currentPan < -0.5 {
-                    // Transmitting to Left
-                    self.leftLevel = self.leftLevel * self.smoothingFactor +
-                                     normalizedRMS * (1.0 - self.smoothingFactor)
-                    self.rightLevel = self.rightLevel * self.smoothingFactor  // decay
-                } else if currentPan > 0.5 {
-                    // Transmitting to Right
-                    self.rightLevel = self.rightLevel * self.smoothingFactor +
-                                      normalizedRMS * (1.0 - self.smoothingFactor)
-                    self.leftLevel = self.leftLevel * self.smoothingFactor   // decay
-                }
-            } else {
-                // PTT is off — decay both channels
-                self.leftLevel  *= self.smoothingFactor
-                self.rightLevel *= self.smoothingFactor
+        if volume > 0.01 {
+            if pan < -0.5 {
+                leftLevel = leftLevel * smoothingFactor + normalizedRMS * (1.0 - smoothingFactor)
+                rightLevel = rightLevel * smoothingFactor
+            } else if pan > 0.5 {
+                rightLevel = rightLevel * smoothingFactor + normalizedRMS * (1.0 - smoothingFactor)
+                leftLevel = leftLevel * smoothingFactor
             }
+        } else {
+            leftLevel *= smoothingFactor
+            rightLevel *= smoothingFactor
         }
     }
 }
