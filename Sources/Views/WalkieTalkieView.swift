@@ -158,7 +158,7 @@ struct WalkieTalkieView: View {
                 Task {
                     if micPermission == .denied {
                         if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
+                            await UIApplication.shared.open(url)
                         }
                     } else {
                         let granted = await AVAudioApplication.requestRecordPermission()
