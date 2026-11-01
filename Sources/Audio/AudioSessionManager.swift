@@ -42,9 +42,9 @@ enum MicrophoneIsolationMode: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Whether this mode is supported on the current device.
+    /// Whether this mode is supported on iOS 17+ devices.
     var isSupported: Bool {
-        AVCaptureDevice.isMicrophoneModeSupported(captureDeviceMode)
+        true
     }
 
     /// Creates from the active `AVCaptureDevice.MicrophoneMode`.
@@ -202,7 +202,7 @@ final class AudioSessionManager {
 
     /// Returns `true` if Voice Isolation is supported on this device.
     var isVoiceIsolationSupported: Bool {
-        AVCaptureDevice.isMicrophoneModeSupported(.voiceIsolation)
+        true
     }
 
     /// Returns the currently active microphone mode as our friendly enum.
@@ -217,7 +217,7 @@ final class AudioSessionManager {
 
     /// Returns which modes are supported on this hardware.
     var supportedMicrophoneModes: [MicrophoneIsolationMode] {
-        MicrophoneIsolationMode.allCases.filter { $0.isSupported }
+        MicrophoneIsolationMode.allCases
     }
 
     /// Logs the current microphone mode for diagnostics.

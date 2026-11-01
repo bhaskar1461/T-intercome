@@ -347,7 +347,9 @@ struct DiagnosticsSheetView: View {
 
     private func micModeRow(_ mode: MicrophoneIsolationMode) -> some View {
         let isActive = routeMonitor.activeMicMode == mode
-        let isSupported = mode.isSupported
+        let iconTint: Color = isActive ? (mode == .voiceIsolation ? .green : .white) : .white.opacity(0.4)
+        let bgTint: Color = isActive ? (mode == .voiceIsolation ? Color.green.opacity(0.12) : Color.white.opacity(0.08)) : Color.white.opacity(0.02)
+        let borderTint: Color = isActive ? (mode == .voiceIsolation ? Color.green.opacity(0.35) : Color.white.opacity(0.2)) : Color.white.opacity(0.05)
 
         return Button {
             AudioSessionManager.shared.showSystemMicrophoneModeUI()
@@ -355,17 +357,13 @@ struct DiagnosticsSheetView: View {
             HStack(spacing: 10) {
                 Image(systemName: mode.iconName)
                     .font(.system(size: 14))
-                    .foregroundColor(
-                        !isSupported ? .white.opacity(0.2) :
-                        isActive ? (mode == .voiceIsolation ? .green : .white) :
-                        .white.opacity(0.4)
-                    )
+                    .foregroundColor(iconTint)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(mode.rawValue.uppercased())
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundColor(isSupported ? .white : .white.opacity(0.3))
+                        .foregroundColor(.white)
                     Text(mode.subtitle)
                         .font(.system(size: 8, design: .monospaced))
                         .foregroundColor(.white.opacity(0.35))
@@ -373,11 +371,7 @@ struct DiagnosticsSheetView: View {
 
                 Spacer()
 
-                if !isSupported {
-                    Text("N/A")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.2))
-                } else if isActive {
+                if isActive {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14))
                         .foregroundColor(mode == .voiceIsolation ? .green : .white)
@@ -385,22 +379,12 @@ struct DiagnosticsSheetView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(
-                isActive && isSupported
-                    ? (mode == .voiceIsolation ? Color.green.opacity(0.12) : Color.white.opacity(0.08))
-                    : Color.white.opacity(0.02)
-            )
+            .background(bgTint)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(
-                        isActive && isSupported
-                            ? (mode == .voiceIsolation ? Color.green.opacity(0.35) : Color.white.opacity(0.2))
-                            : Color.white.opacity(0.05),
-                        lineWidth: 1
-                    )
+                    .strokeBorder(borderTint, lineWidth: 1)
             )
         }
-        .disabled(!isSupported)
     }
 }
