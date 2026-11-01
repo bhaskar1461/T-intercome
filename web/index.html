@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SplitBuds PTT — Nothing OS Split-Channel Walkie-Talkie</title>
+    <style>
+        :root {
+            --bg: #000000;
+            --surface: rgba(255, 255, 255, 0.04);
+            --border: rgba(255, 255, 255, 0.12);
+            --red: #ff2a2a;
+            --green: #00e676;
+            --text-dim: rgba(255, 255, 255, 0.45);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg);
+            color: #ffffff;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px 16px;
+        }
+        .header {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+        .title-group h1 {
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 2px;
+        }
+        .title-group span {
+            color: var(--red);
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0, 230, 118, 0.12);
+            border: 1px solid rgba(0, 230, 118, 0.3);
+            color: var(--green);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+        }
+        .cards {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .ptt-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px 20px;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .ptt-card:active, .ptt-card.active {
+            background: rgba(255, 42, 42, 0.15);
+            border-color: var(--red);
+            transform: scale(0.98);
+        }
+        .ptt-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .user-name {
+            font-size: 32px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            margin-bottom: 4px;
+        }
+        .card.active .user-name {
+            color: var(--red);
+        }
+        .channel-id {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+        .meter-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            margin: 0 30px 14px 30px;
+            overflow: hidden;
+            position: relative;
+        }
+        .meter-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--red);
+            transition: width 0.05s linear;
+        }
+        .ptt-hint {
+            font-size: 10px;
+            color: var(--text-dim);
+            font-weight: 600;
+        }
+        .active .ptt-hint {
+            color: var(--red);
+        }
+        .download-box {
+            width: 100%;
+            max-width: 480px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .download-btn {
+            background: #ffffff;
+            color: #000000;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 800;
+            text-decoration: none;
+            padding: 10px 18px;
+            border-radius: 6px;
+            letter-spacing: 1px;
+            transition: opacity 0.15s ease;
+        }
+        .download-btn:hover { opacity: 0.9; }
+        .meta-text {
+            font-size: 10px;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title-group">
+            <h1>SPLITBUDS</h1>
+            <span>PTT // NOTHING OS COMPANION</span>
+        </div>
+        <div class="status-badge">
+            <div class="dot"></div>
+            STEREO A2DP
+        </div>
+    </div>
+
+    <div class="cards">
+        <!-- Bhaskar (Left Bud) -->
+        <div class="ptt-card" id="card-left">
+            <div class="ptt-label">TALK TO BHASKAR</div>
+            <div class="user-name">BHASKAR</div>
+            <div class="channel-id">CH-L · LEFT BUD (PAN -1.0)</div>
+            <div class="meter-bar">
+                <div class="meter-fill" id="meter-left"></div>
+            </div>
+            <div class="ptt-hint" id="hint-left">HOLD TO TALK</div>
+        </div>
+
+        <!-- Tanmayee (Right Bud) -->
+        <div class="ptt-card" id="card-right">
+            <div class="ptt-label">TALK TO TANMAYEE</div>
+            <div class="user-name">TANMAYEE</div>
+            <div class="channel-id">CH-R · RIGHT BUD (PAN +1.0)</div>
+            <div class="meter-bar">
+                <div class="meter-fill" id="meter-right"></div>
+            </div>
+            <div class="ptt-hint" id="hint-right">HOLD TO TALK</div>
+        </div>
+    </div>
+
+    <div class="download-box">
+        <div>
+            <div style="font-size: 12px; font-weight: bold; margin-bottom: 2px;">SplitBudsPTT.ipa</div>
+            <div class="meta-text">v1.0 · iOS 17.0+ · Sideloadly & AltStore</div>
+        </div>
+        <a href="/SplitBudsPTT.ipa" class="download-btn" download>GET IPA</a>
+    </div>
+
+    <script>
+        let audioCtx = null;
+        let panner = null;
+        let gainNode = null;
+        let micStream = null;
+
+        async function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            panner = audioCtx.createStereoPanner();
+            gainNode = audioCtx.createGain();
+            gainNode.gain.value = 0.0; // Muted initially
+            panner.connect(audioCtx.destination);
+            gainNode.connect(panner);
+
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const source = audioCtx.createMediaStreamSource(micStream);
+                source.connect(gainNode);
+            } catch (err) {
+                console.log("Mic preview not available without permission — sound effects active.");
+            }
+        }
+
+        function playBeep(panVal) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const oscGain = audioCtx.createGain();
+            const tonePanner = audioCtx.createStereoPanner();
+            tonePanner.pan.value = panVal;
+            osc.frequency.value = 1200;
+            oscGain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            oscGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.connect(oscGain);
+            oscGain.connect(tonePanner);
+            tonePanner.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function startPTT(channel, panVal) {
+            initAudio().then(() => {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                panner.pan.value = panVal;
+                gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+                playBeep(panVal);
+                document.getElementById(`card-${channel}`).classList.add('active');
+                document.getElementById(`hint-${channel}`).innerText = '● TRANSMITTING';
+                document.getElementById(`meter-${channel}`).style.width = '80%';
+            });
+        }
+
+        function stopPTT(channel, panVal) {
+            if (!gainNode) return;
+            gainNode.gain.setValueAtTime(0.0, audioCtx.currentTime);
+            playBeep(panVal);
+            document.getElementById(`card-${channel}`).classList.remove('active');
+            document.getElementById(`hint-${channel}`).innerText = 'HOLD TO TALK';
+            document.getElementById(`meter-${channel}`).style.width = '0%';
+        }
+
+        const leftCard = document.getElementById('card-left');
+        leftCard.addEventListener('mousedown', () => startPTT('left', -1.0));
+        window.addEventListener('mouseup', () => stopPTT('left', -1.0));
+        leftCard.addEventListener('touchstart', (e) => { e.preventDefault(); startPTT('left', -1.0); });
+        leftCard.addEventListener('touchend', (e) => { e.preventDefault(); stopPTT('left', -1.0); });
+
+        const rightCard = document.getElementById('card-right');
+        rightCard.addEventListener('mousedown', () => startPTT('right', 1.0));
+        window.addEventListener('mouseup', () => stopPTT('right', 1.0));
+        rightCard.addEventListener('touchstart', (e) => { e.preventDefault(); startPTT('right', 1.0); });
+        rightCard.addEventListener('touchend', (e) => { e.preventDefault(); stopPTT('right', 1.0); });
+    </script>
+</body>
+</html>
+

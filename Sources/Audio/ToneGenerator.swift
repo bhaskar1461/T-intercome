@@ -35,14 +35,18 @@ final class ToneGenerator: ObservableObject {
     private let rightTestFrequency: Float = 660.0          // E5
     private let testToneDuration: Double = 0.6             // 600ms pulse
 
+    private var isAttached = false
+
     // MARK: - Setup
 
     /// Attaches the tone mixer to the given engine. Call once during graph build.
     func attach(to engine: AVAudioEngine) {
+        guard !isAttached else { return }
         self.engine = engine
         engine.attach(toneMixerNode)
         engine.connect(toneMixerNode, to: engine.mainMixerNode, format: nil)
         toneMixerNode.outputVolume = 0.8
+        isAttached = true
     }
 
     // MARK: - Roger Beep / Squelch

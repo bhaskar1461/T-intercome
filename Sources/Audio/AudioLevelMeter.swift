@@ -48,8 +48,9 @@ final class AudioLevelMeter: ObservableObject {
 
         let inputNode = engine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
+        let tapFormat: AVAudioFormat? = (format.sampleRate > 0 && format.channelCount > 0) ? format : nil
 
-        inputNode.installTap(onBus: 0, bufferSize: 512, format: format) { [weak self, weak pttMixer] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 512, format: tapFormat) { [weak self, weak pttMixer] buffer, _ in
             guard let channelData = buffer.floatChannelData else { return }
             let frameLength = Int(buffer.frameLength)
             guard frameLength > 0 else { return }

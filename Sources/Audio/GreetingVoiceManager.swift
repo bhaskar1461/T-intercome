@@ -21,8 +21,8 @@ final class GreetingVoiceManager: ObservableObject {
 
     private let synthesizer = AVSpeechSynthesizer()
     private weak var engine: AVAudioEngine?
-    private let playerNode = AVAudioPlayerNode()
-    private let greetingMixer = AVAudioMixerNode()
+    let playerNode = AVAudioPlayerNode()
+    let greetingMixer = AVAudioMixerNode()
     private let logger = Logger(subsystem: "com.bhaskar.splitbudsptt", category: "GreetingVoice")
 
     private var isGraphAttached = false
@@ -38,14 +38,21 @@ final class GreetingVoiceManager: ObservableObject {
         engine.attach(greetingMixer)
 
         // Wire player -> greetingMixer -> mainMixerNode
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44100.0, channels: 2)!
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 2)
+            ?? engine.mainMixerNode.outputFormat(forBus: 0)
         engine.connect(playerNode, to: greetingMixer, format: format)
         engine.connect(greetingMixer, to: engine.mainMixerNode, format: nil)
 
         greetingMixer.outputVolume = 1.0
-        playerNode.play()
         isGraphAttached = true
         logger.info("GreetingVoiceManager attached to AVAudioEngine.")
+    }
+
+    /// Starts the player node after engine has started.
+    func startPlayer() {
+        if isGraphAttached && !playerNode.isPlaying {
+            playerNode.play()
+        }
     }
 
     // MARK: - Greeting Playback
@@ -117,10 +124,9 @@ final class GreetingVoiceManager: ObservableObject {
                 }
             }
         } else {
-            // Direct playback fallback if engine is still starting
+            // Direct playback fallback if engine is not running
             await withCheckedContinuation { continuation in
                 synthesizer.speak(utterance)
-                // Approximate speech duration
                 Task {
                     try? await Task.sleep(for: .milliseconds(1100))
                     continuation.resume()

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 
 /// Nothing-inspired split-screen walkie-talkie UI.
 ///
@@ -17,6 +18,7 @@ struct WalkieTalkieView: View {
     @State private var showDiagnostics = false
     @State private var isInvertedLayout = false
     @State private var setupError: String?
+    @State private var micPermission: AVAudioApplication.recordPermission = AVAudioApplication.shared.recordPermission
 
     // Haptic generators
     private let impactPress = UIImpactFeedbackGenerator(style: .rigid)
@@ -38,26 +40,31 @@ struct WalkieTalkieView: View {
                     errorBanner(error)
                 }
 
-                // Startup Greeting Banner
-                if greetingManager.isGreetingActive {
-                    startupGreetingBanner
-                }
-
-                // HFP Warning
-                if routeMonitor.isHFPDetected {
-                    hfpWarningBanner
-                }
-
-                // PTT Zones
-                if isInvertedLayout {
-                    pttCard(channel: .right)
-                    Divider().background(Color.white.opacity(0.15))
-                    pttCard(channel: .left)
-                        .rotationEffect(.degrees(180))
+                // Check microphone permission status
+                if micPermission != .granted {
+                    permissionRequiredView
                 } else {
-                    pttCard(channel: .left)
-                    Divider().background(Color.white.opacity(0.15))
-                    pttCard(channel: .right)
+                    // Startup Greeting Banner
+                    if greetingManager.isGreetingActive {
+                        startupGreetingBanner
+                    }
+
+                    // HFP Warning
+                    if routeMonitor.isHFPDetected {
+                        hfpWarningBanner
+                    }
+
+                    // PTT Zones
+                    if isInvertedLayout {
+                        pttCard(channel: .right)
+                        Divider().background(Color.white.opacity(0.15))
+                        pttCard(channel: .left)
+                            .rotationEffect(.degrees(180))
+                    } else {
+                        pttCard(channel: .left)
+                        Divider().background(Color.white.opacity(0.15))
+                        pttCard(channel: .right)
+                    }
                 }
 
                 // Bottom toolbar
@@ -87,11 +94,21 @@ struct WalkieTalkieView: View {
 
     private func setupAudio() async {
         guard !isSetUp else { return }
+
+        let permission = AVAudioApplication.shared.recordPermission
+        micPermission = permission
+
+        if permission == .undetermined {
+            let granted = await AVAudioApplication.requestRecordPermission()
+            micPermission = AVAudioApplication.shared.recordPermission
+            guard granted else { return }
+        } else if permission == .denied {
+            return
+        }
+
         do {
             try AudioSessionManager.shared.configure()
-            try audioEngine.buildGraph()
-            toneGenerator.attach(to: audioEngine.engine)
-            greetingManager.attach(to: audioEngine.engine)
+            try audioEngine.buildGraph(toneGenerator: toneGenerator, greetingManager: greetingManager)
             levelMeter.startMetering(engine: audioEngine.engine, pttMixer: audioEngine.pttMixerNode)
             routeMonitor.startMonitoring()
             isSetUp = true
@@ -107,6 +124,65 @@ struct WalkieTalkieView: View {
         routeMonitor.stopMonitoring()
         audioEngine.stopEngine()
         AudioSessionManager.shared.deactivate()
+    }
+
+    // MARK: - Permission View
+
+    private var permissionRequiredView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .stroke(Color.red.opacity(0.3), lineWidth: 2)
+                    .frame(width: 80, height: 80)
+                Image(systemName: "mic.slash.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.red)
+            }
+
+            VStack(spacing: 8) {
+                Text("MICROPHONE ACCESS")
+                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                Text(micPermission == .denied
+                     ? "Access was denied in iOS Settings. SplitBuds requires microphone input to route walkie-talkie audio to your earbuds."
+                     : "SplitBuds requires direct iPhone microphone access to stream stereo audio to Left & Right earbuds independently.")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Button {
+                Task {
+                    if micPermission == .denied {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } else {
+                        let granted = await AVAudioApplication.requestRecordPermission()
+                        micPermission = AVAudioApplication.shared.recordPermission
+                        if granted {
+                            await setupAudio()
+                        }
+                    }
+                }
+            } label: {
+                Text(micPermission == .denied ? "OPEN SETTINGS" : "GRANT PERMISSION")
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.white)
+                    .cornerRadius(8)
+            }
+            .padding(.horizontal, 32)
+            .padding(.top, 12)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Status Bar

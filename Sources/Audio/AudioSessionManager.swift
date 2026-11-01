@@ -117,11 +117,11 @@ final class AudioSessionManager {
         // 2. Request ultra-low-latency I/O buffer (5ms / 0.005s)
         try session.setPreferredIOBufferDuration(0.005)
 
-        // 3. Lock input to the built-in microphone
-        try lockInputToBuiltInMicrophone()
-
-        // 4. Activate the session
+        // 3. Activate the session FIRST so hardware routes & availableInputs are populated
         try session.setActive(true, options: [])
+
+        // 4. Lock input to the built-in microphone gracefully
+        try lockInputToBuiltInMicrophone()
 
         logCurrentRoute()
         logMicrophoneMode()
@@ -149,21 +149,24 @@ final class AudioSessionManager {
 
     /// Enumerates available inputs and locks the preferred input to the built-in microphone.
     private func lockInputToBuiltInMicrophone() throws {
-        guard let availableInputs = session.availableInputs else {
-            logger.error("No available audio inputs found.")
-            throw AudioSessionError.noInputsAvailable
+        guard let availableInputs = session.availableInputs, !availableInputs.isEmpty else {
+            logger.warning("No available audio inputs found during lock; continuing with default route.")
+            return
         }
 
         logger.info("Available inputs: \(availableInputs.map { "\($0.portName) [\($0.portType.rawValue)]" })")
 
-        guard let builtInMic = availableInputs.first(where: { $0.portType == .builtInMic }) else {
-            logger.error("Built-in microphone not found among available inputs.")
-            throw AudioSessionError.builtInMicNotFound
+        if let builtInMic = availableInputs.first(where: { $0.portType == .builtInMic }) {
+            do {
+                try session.setPreferredInput(builtInMic)
+                lockedBuiltInMic = builtInMic
+                logger.info("Locked preferred input to: \(builtInMic.portName)")
+            } catch {
+                logger.warning("Could not set preferred input to builtInMic: \(error.localizedDescription)")
+            }
+        } else {
+            logger.warning("Built-in microphone not explicitly listed among available inputs.")
         }
-
-        try session.setPreferredInput(builtInMic)
-        lockedBuiltInMic = builtInMic
-        logger.info("Locked preferred input to: \(builtInMic.portName)")
     }
 
     /// Selects a specific data source (sub-microphone) on the built-in mic.
@@ -192,7 +195,9 @@ final class AudioSessionManager {
     /// user-controlled via system UI (`AVCaptureDevice.showSystemUserInterface(.microphoneModes)`).
     func showSystemMicrophoneModeUI() {
         logger.info("Presenting system microphone mode UI...")
-        AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+        DispatchQueue.main.async {
+            AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+        }
     }
 
     /// Returns `true` if Voice Isolation is currently active on the hardware.

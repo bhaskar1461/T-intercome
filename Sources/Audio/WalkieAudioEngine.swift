@@ -44,9 +44,9 @@ enum EarbudChannel: String, CaseIterable, Identifiable {
 ///
 /// Graph topology:
 /// ```
-/// inputNode -> bandpassEQ -> pttMixer -> mainMixerNode -> outputNode
-///                                ^
-///                          pan = -1 / +1
+/// inputNode -> gainMixerNode -> bandpassEQ -> pttMixer -> mainMixerNode -> outputNode
+///                                                ^
+///                                          pan = -1 / +1
 /// ```
 @MainActor
 final class WalkieAudioEngine: ObservableObject {
@@ -84,18 +84,36 @@ final class WalkieAudioEngine: ObservableObject {
     // MARK: - Engine Setup
 
     /// Builds and prepares the audio graph. Call after `AudioSessionManager.configure()`.
-    func buildGraph() throws {
+    /// Attaches auxiliary generators (tones, greeting voices) BEFORE starting the engine
+    /// to avoid CoreAudio graph re-connection crashes while running.
+    func buildGraph(toneGenerator: ToneGenerator? = nil, greetingManager: GreetingVoiceManager? = nil) throws {
+        // Stop engine cleanly if previously running
+        if engine.isRunning {
+            engine.stop()
+        }
+
         let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        var inputFormat = inputNode.outputFormat(forBus: 0)
+
+        // Validate hardware format; fall back if sample rate or channel count is 0
+        if inputFormat.sampleRate == 0 || inputFormat.channelCount == 0 {
+            logger.warning("Hardware input format invalid (sampleRate=0). Using standard 48kHz mono format.")
+            inputFormat = AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 1)
+                ?? AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44100.0, channels: 1, interleaved: false)!
+        }
 
         logger.info("Input format: \(inputFormat.description)")
 
-        // Attach nodes
+        // Attach core PTT nodes
         engine.attach(gainMixerNode)
         engine.attach(bandpassEQ)
         engine.attach(pttMixerNode)
 
-        // Wire: input -> gain -> bandpass -> pttMixer -> mainMixer
+        // Attach auxiliary subsystems BEFORE preparing engine
+        toneGenerator?.attach(to: engine)
+        greetingManager?.attach(to: engine)
+
+        // Wire core mic path: input -> gain -> bandpass -> pttMixer -> mainMixer
         engine.connect(inputNode,      to: gainMixerNode, format: inputFormat)
         engine.connect(gainMixerNode,  to: bandpassEQ,    format: inputFormat)
         engine.connect(bandpassEQ,     to: pttMixerNode,  format: inputFormat)
@@ -108,7 +126,10 @@ final class WalkieAudioEngine: ObservableObject {
 
         engine.prepare()
         try engine.start()
-        logger.info("AVAudioEngine started.")
+        logger.info("AVAudioEngine successfully started.")
+
+        // Start greeting player node now that engine is running
+        greetingManager?.startPlayer()
     }
 
     /// Tears down the engine cleanly.
@@ -132,15 +153,11 @@ final class WalkieAudioEngine: ObservableObject {
         isTransmitting = true
     }
 
-    /// Closes the mic gate with a brief volume ramp to prevent audio clicks.
+    /// Closes the mic gate.
     func stopTransmitting() {
         logger.info("PTT OFF")
 
-        // Ramp down over ~20ms worth of samples to avoid a click
-        // AVAudioMixerNode doesn't support native ramping, so we set to 0 immediately.
-        // The squelch tail-tone masks the discontinuity.
         pttMixerNode.outputVolume = 0.0
-
         activeChannel = nil
         isTransmitting = false
     }

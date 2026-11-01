@@ -35,3 +35,4 @@ final class GreetingVoiceManagerTests: XCTestCase {
         XCTAssertEqual(EarbudChannel.right.panValue, 1.0)
     }
 }
+

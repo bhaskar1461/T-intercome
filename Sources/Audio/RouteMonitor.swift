@@ -35,8 +35,7 @@ final class RouteMonitor: ObservableObject {
     // MARK: - Init
 
     init() {
-        // Snapshot the current route immediately
-        updateRouteInfo()
+        // Safe default init — avoid querying hardware before session activation
     }
 
     // MARK: - Observation
